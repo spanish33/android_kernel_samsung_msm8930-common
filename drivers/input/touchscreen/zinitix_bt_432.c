@@ -63,9 +63,11 @@
 #endif
 
 /* touch booster */
+#ifdef CONFIG_SEC_DVFS
 #define TOUCH_BOOSTER			1
 #define TOUCH_BOOSTER_OFF_TIME	300
 #define TOUCH_BOOSTER_CHG_TIME	200
+#endif
 
 #define	TSP_NORMAL_EVENT_MSG	1
 static int m_ts_debug_mode = ZINITIX_DEBUG;
@@ -73,7 +75,7 @@ static int m_ts_debug_mode = ZINITIX_DEBUG;
 #define	SYSTEM_MAX_X_RESOLUTION	480
 #define	SYSTEM_MAX_Y_RESOLUTION	800
 
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
 #include <linux/cpufreq.h>
 #endif
 
@@ -319,7 +321,7 @@ struct zinitix_touch_dev {
 	struct led_classdev		led;
 	u8				led_brightness;
 	
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
  	struct delayed_work work_dvfs_off;
  	struct delayed_work	work_dvfs_chg;
  	bool	dvfs_lock_status;
@@ -356,6 +358,7 @@ static struct i2c_device_id zinitix_idtable[] = {
 static struct i2c_board_info __initdata Zxt_i2c_info[] =
 	{
 		I2C_BOARD_INFO(ZINITIX_DRIVER_NAME, 0x40>>1),
+		.irq = MSM_GPIO_TO_INT( 11 ),
 	};
 #endif
 
@@ -363,7 +366,8 @@ static int touch_is_pressed;
 
 
 
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
+#if 0
 static void change_dvfs_lock(struct work_struct *work)
 {
 	struct zinitix_touch_dev *data = container_of(work,
@@ -382,6 +386,7 @@ static void change_dvfs_lock(struct work_struct *work)
 	else
 		printk("[TSP] DVFS On! %s", __func__);
 }
+#endif
 
 static void set_dvfs_off(struct work_struct *work)
 {
@@ -430,9 +435,9 @@ static void set_dvfs_lock(struct zinitix_touch_dev *data, uint32_t on)
 	} else if (on == 2) {
 		printk("%s No working, init status \n", __func__);	
 		cancel_delayed_work(&data->work_dvfs_off);
-		cancel_delayed_work(&data->work_dvfs_chg);
+//		cancel_delayed_work(&data->work_dvfs_chg);
 		schedule_work(&data->work_dvfs_off.work);
-		schedule_work(&data->work_dvfs_chg.work);
+//		schedule_work(&data->work_dvfs_chg.work);
 	}
 	mutex_unlock(&data->dvfs_lock);
 }
@@ -998,7 +1003,7 @@ static bool ts_mini_init_touch(struct zinitix_touch_dev *touch_dev)
 	u16 chip_check_sum;
 #endif
 
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
  	set_dvfs_lock(touch_dev, 2);
  	printk("[TSP] dvfs_lock free.\n");
 #endif
@@ -1103,6 +1108,8 @@ static bool ts_mini_init_touch(struct zinitix_touch_dev *touch_dev)
 	if (ts_write_reg(touch_dev->client,0x004c, 1) != I2C_SUCCESS)
 		goto fail_mini_init;
 	if (ts_write_reg(touch_dev->client,0x00de, 30) != I2C_SUCCESS)
+		goto fail_mini_init;
+	if (ts_write_reg(touch_dev->client,0x0106, 64) != I2C_SUCCESS)
 		goto fail_mini_init;
 
 	if (touch_dev->use_esd_timer) {
@@ -1950,6 +1957,8 @@ retry_init:
 		goto fail_init;
 	if (ts_write_reg(touch_dev->client,0x00de, 30) != I2C_SUCCESS)
 		goto fail_init;
+	if (ts_write_reg(touch_dev->client,0x0106, 64) != I2C_SUCCESS)
+		goto fail_init;
 
 
 	ts_read_data(touch_dev->client, ZINITIX_PERIODICAL_INTERRUPT_INTERVAL,
@@ -2231,7 +2240,7 @@ static void zinitix_parsing_data(struct zinitix_touch_dev *touch_dev)
 		input_report_key(touch_dev->input_dev, BTN_TOUCH, 0);
 #endif
 		input_sync(touch_dev->input_dev);
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
  	set_dvfs_lock(touch_dev, !!touch_is_pressed);
 #endif
 		if(reported == true)	// for button event
@@ -2390,7 +2399,7 @@ static void zinitix_parsing_data(struct zinitix_touch_dev *touch_dev)
 #endif
 	input_sync(touch_dev->input_dev);
 
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
  	set_dvfs_lock(touch_dev, !!touch_is_pressed);
 #endif
 
@@ -2517,7 +2526,7 @@ static void zinitix_early_suspend(struct early_suspend *h)
 		zinitix_printk("ts_esd_timer_stop\n");
 	}
 
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
  	set_dvfs_lock(touch_dev, 2);
  	printk("[TSP] dvfs_lock free.\n");
 #endif
@@ -3019,10 +3028,12 @@ static void get_key_threshold(void *device_data)
 			buff, strnlen(buff, sizeof(buff)));
 }
 
+#define I2C_BUFFER_SIZE 64
 static bool get_raw_data(struct zinitix_touch_dev *touch_dev, u8 *buff, int skip_cnt)
 {
 	u32 total_node = touch_dev->cap_info.total_node_num;
-	u32 sz;
+//	u32 sz;
+	int sz;
 	int i;
 
 	disable_irq(touch_dev->irq);
@@ -3047,7 +3058,7 @@ static bool get_raw_data(struct zinitix_touch_dev *touch_dev, u8 *buff, int skip
 	}
 
 	zinitix_debug_msg("read raw data\n");
-	sz = total_node*2;
+	sz = total_node*2 + sizeof(struct _ts_zinitix_point_info); // 380 = 190*2
 
 	while (gpio_get_value(touch_dev->int_gpio_num))
 		msleep(1);
@@ -3074,10 +3085,11 @@ static void run_reference_read(void *device_data)
 	char buff[16] = {0};
 	unsigned int min, max;
 	int i,j;
-	
+
 	set_default_result(info);
 
 	ts_set_touchmode(TOUCH_SDND_MODE);
+	mdelay(100);
 	get_raw_data(info, (u8 *)info->dnd_data, 10);
 	ts_set_touchmode(TOUCH_POINT_MODE);
 
@@ -3089,7 +3101,8 @@ static void run_reference_read(void *device_data)
 	{
 		for(j=0; j<info->cap_info.y_node_num; j++)
 		{
-			printk("[TSP] info->dnd_data : %d ", info->dnd_data[j+i]);
+//			printk("[TSP] info->dnd_data : %d ", info->dnd_data[j+i]);
+			printk("[TSP] info->dnd_data : %d ", info->dnd_data[j+i*info->cap_info.y_node_num]);
 
 			if(info->dnd_data[j+i] < min)
 			{
@@ -4522,10 +4535,10 @@ static int zinitix_touch_probe(struct i2c_client *client,
 	}
 
 
-#if TOUCH_BOOSTER
+#ifdef TOUCH_BOOSTER
  	mutex_init(&touch_dev->dvfs_lock);
  	INIT_DELAYED_WORK(&touch_dev->work_dvfs_off, set_dvfs_off);
- 	INIT_DELAYED_WORK(&touch_dev->work_dvfs_chg, change_dvfs_lock);
+// 	INIT_DELAYED_WORK(&touch_dev->work_dvfs_chg, change_dvfs_lock);
  	touch_dev->dvfs_lock_status = false;
 #endif
 

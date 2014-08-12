@@ -60,6 +60,7 @@ static struct sf_lut rbatt_sf = {
 				{2512, 546, 116, 92, 82},
 				{3210, 664, 134, 107, 95},
 				{7092, 150448, 13159, 13954, 143},
+		
 	}
 };
 
@@ -102,6 +103,7 @@ static struct pc_temp_ocv_lut pc_temp_ocv = {
 				{3000, 3000, 3000, 3000, 3000}
 	}
 };
+
 
 struct bms_battery_data Samsung_8930_Serrano_1900mAh_data = {
 	.fcc				= 1800,
