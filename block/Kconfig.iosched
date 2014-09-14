@@ -32,6 +32,14 @@ config IOSCHED_DEADLINE
 	  a new point in the service tree and doing a batch of IO from there
 	  in case of expiry.
 
+config IOSCHED_ZEN
+tristate "Zen I/O scheduler"
+default y
+---help---
+FCFS, dispatches are back-inserted, deadlines ensure fairness.
+Should work best with devices where there is no travel delay.
+
+
 config IOSCHED_ROW
 	tristate "ROW I/O scheduler"
 	default y
@@ -96,6 +104,9 @@ choice
 
 	config DEFAULT_DEADLINE
 		bool "Deadline" if IOSCHED_DEADLINE=y
+
+       config DEFAULT_ZEN
+                bool "ZEN" if IOSCHED_ZEN=y
 
 	config DEFAULT_ROW
 		bool "ROW" if IOSCHED_ROW=y
